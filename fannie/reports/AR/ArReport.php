@@ -37,26 +37,48 @@ class ArReport extends FannieReportPage
     protected $title = "Fannie : AR Activity Report";
     protected $header = "AR Activity Report";
     protected $required_fields = array('memNum');
+    protected $card_no = '';
+    protected $member_full_name = '';
 
     public function preprocess()
     {
         $this->card_no = FormLib::get('memNum','');
+        $dbc = $this->connection;
+        $dbc->selectDB($this->config->get('OP_DB'));
+        $cdModel = new CustdataModel($dbc);
+        $cdModel->CardNo($this->card_no);
+        $cdModel->personNum(1);
+        $mems = $cdModel->find();
+        if ($mems != null) {
+            $mem = $mems[0];
+            $this->member_full_name = $mem->FirstName() . " " . $mem->LastName();
+        }
 
         return parent::preprocess();
     }
 
     public function report_description_content()
     {
-        return array('Activity for account #'.$this->card_no);
+        $desc = sprintf("Activity for account %s#%d %s%s",
+            '<span style="font-weight:bold;">',
+            $this->card_no,
+            $this->member_full_name,
+            '</span>'
+        );
+        return array($desc);
     }
 
     public function fetch_report_data()
     {
         $dbc = $this->connection;
         $dbc->selectDB($this->config->get('TRANS_DB'));
-        $q = $dbc->prepare_statement("select charges,trans_num,payments,
+
+        $fromCols = "card_no,charges,payments,tdate,trans_num";
+        $fromSpec = "(SELECT $fromCols FROM ar_history " .
+            "UNION SELECT $fromCols FROM ar_history_today)";
+        $q = $dbc->prepare_statement("SELECT charges,trans_num,payments,
                 year(tdate),month(tdate),day(tdate)
-                from ar_history AS s 
+                FROM $fromSpec AS s
                 WHERE s.card_no=? ORDER BY tdate DESC");
         $r = $dbc->exec_statement($q,array($this->card_no));
 
